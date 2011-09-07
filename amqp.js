@@ -138,6 +138,7 @@ function AMQPParser (version, type) {
 
   this.frameHeader = new Buffer(7);
   this.frameHeader.used = 0;
+	this.dataPointer = 0;
 }
 
 // If there's an error in the parser, call the onError handler or throw
@@ -146,102 +147,152 @@ AMQPParser.prototype.throwError = function (error) {
   else throw new Error(error);
 };
 
+AMQPParser.prototype.handleFrameHeader = function(data) {
+
+	data.copy( this.frameHeader, this.frameHeader.used, this.dataPointer, this.dataPointer + this.frameHeader.length );
+	this.frameHeader.used = this.frameHeader.length;
+
+	if (this.frameHeader.used == this.frameHeader.length) {
+
+		this.frameHeader.read = 0;
+		this.frameType = this.frameHeader[this.frameHeader.read++];
+		this.frameChannel = parseInt(this.frameHeader, 2);
+		this.frameSize = parseInt(this.frameHeader, 4);
+
+		this.frameHeader.used = 0; // for reuse
+
+		debug("got frame: " + JSON.stringify([ this.frameType
+																				 , this.frameChannel
+																				 , this.frameSize
+																				 ]));
+
+		if (this.frameSize > maxFrameBuffer) {
+			this.throwError("Oversized frame " + this.frameSize);
+		}
+
+		// TODO use a free list and keep a bunch of 8k buffers around
+
+		// Setup frameBuffer
+		this.frameBuffer = new Buffer(this.frameSize);
+		this.frameBuffer.used = 0;
+
+		// Inrement dataPointer
+		this.dataPointer += this.frameHeader.length;
+		if(this.dataPointer == data.length){
+			this.dataPointer = 0;
+		}
+
+		// Change State
+		this.state = 'bufferFrame';
+		this.handleFrameContent(data);
+	}
+};
+
+AMQPParser.prototype.handleFrameContent = function( data ) {
+	 // Buffer the entire frame. I would love to avoid this, but doing
+	// otherwise seems to be extremely painful.
+
+	// If the frame size is with-in this data chunk use it. Other wise just use all the data chunk.
+	var dataEndIndex = (this.dataPointer + this.frameSize > data.length) ?
+									data.length :
+									this.dataPointer + this.frameSize ;
+
+	// Get the length of data we will be using from the data chunk.
+	var dataBeingUsedChunkLength = dataEndIndex - this.dataPointer;
+
+	// If the new data chunk is too big for the frameBuffer only use part of it.
+	if(dataBeingUsedChunkLength + this.frameBuffer.used > this.frameBuffer.length) {
+		dataBeingUsedChunkLength = this.frameBuffer.length - this.frameBuffer.used;
+		dataEndIndex = this.dataPointer + dataBeingUsedChunkLength;
+	}
+
+	// Copy to frameBuffer
+	if(this.frameSize > 0) {
+		data.copy( this.frameBuffer, this.frameBuffer.used, this.dataPointer, dataEndIndex );
+		this.frameBuffer.used += dataBeingUsedChunkLength;
+
+		this.dataPointer += dataBeingUsedChunkLength;
+		if(this.dataPointer == data.length) {
+			this.dataPointer = 0;
+		}
+	}
+
+	if (this.frameBuffer.used == this.frameSize) {
+		// Finished buffering the frame. Parse the frame.
+		switch (this.frameType) {
+			case 1:
+				this._parseMethodFrame(this.frameChannel, this.frameBuffer);
+				break;
+
+			case 2:
+				this._parseHeaderFrame(this.frameChannel, this.frameBuffer);
+				break;
+
+			case 3:
+				if (this.onContent) {
+					this.onContent(this.frameChannel, this.frameBuffer);
+				}
+				break;
+
+			case 8:
+				debug("hearbeat");
+				if (this.onHeartBeat) this.onHeartBeat();
+				break;
+
+			default:
+				this.throwError("Unhandled frame type " + this.frameType);
+				break;
+		}
+		this.state = 'frameEnd';
+		this.handleFrameEnd( data );
+	}
+};
+
+AMQPParser.prototype.handleFrameEnd = function( data ){
+	// Frames are terminated by a single octet.
+	if (data[this.dataPointer] != 206 /* constants.frameEnd */) {
+			debug('data[' + this.dataPointer + '] = ' + data[data.length-1].toString(16));
+			debug('data = ' + data.toString());
+			debug('frameHeader: ' + this.frameHeader.toString());
+			debug('frameBuffer: ' + this.frameBuffer.toString());
+			this.throwError("Oversized frame");
+		return;
+		}
+
+	  // Increase our pointer by one to take in account the 'end' octet.
+		this.dataPointer++;
+		this.state = 'frameHeader';
+
+		// Looks like we still got some frames in this data chunk. Start from the begenning.
+		if(data.length > this.dataPointer) {
+			this.handleFrameHeader( data );
+			
+		// We're done with this data chunk. Reset it.
+		} else if (this.dataPointer == data.length) {
+			this.dataPointer = 0;
+		}
+};
+
 // Everytime data is recieved on the socket, pass it to this function for
 // parsing.
 AMQPParser.prototype.execute = function (data) {
   // This function only deals with dismantling and buffering the frames.
   // It delegats to other functions for parsing the frame-body.
-  debug('execute: ' + data.toString());
-  for (var i = 0; i < data.length; i++) {
-    switch (this.state) {
+ // debug('execute: ' + data.toString());
+
+	switch (this.state) {
       case 'frameHeader':
-        // Here we buffer the frame header. Remember, this is a fully
-        // interruptible parser - it could be (although unlikely)
-        // that we receive only several octets of the frame header
-        // in one packet.
-        this.frameHeader[this.frameHeader.used++] = data[i];
-
-        if (this.frameHeader.used == this.frameHeader.length) {
-          // Finished buffering the frame header - parse it
-          //var h = this.frameHeader.unpack("oonN", 0);
-
-          this.frameHeader.read = 0;
-          this.frameType = this.frameHeader[this.frameHeader.read++];
-          this.frameChannel = parseInt(this.frameHeader, 2);
-          this.frameSize = parseInt(this.frameHeader, 4);
-
-          this.frameHeader.used = 0; // for reuse
-
-          debug("got frame: " + JSON.stringify([ this.frameType
-                                               , this.frameChannel
-                                               , this.frameSize
-                                               ]));
-
-          if (this.frameSize > maxFrameBuffer) {
-            this.throwError("Oversized frame " + this.frameSize);
-          }
-
-          // TODO use a free list and keep a bunch of 8k buffers around
-          this.frameBuffer = new Buffer(this.frameSize);
-          this.frameBuffer.used = 0;
-          this.state = 'bufferFrame';
-        }
-        break;
+				this.handleFrameHeader( data );
+       break;
 
       case 'bufferFrame':
-        // Buffer the entire frame. I would love to avoid this, but doing
-        // otherwise seems to be extremely painful.
-
-        // Copy the incoming data byte-by-byte to the buffer.
-        // FIXME This is slow! Can be improved with a memcpy binding.
-        if(this.frameSize > 0)
-          this.frameBuffer[this.frameBuffer.used++] = data[i];
-        else
-          i--; // the frame ending is actuall this frame (rewind 1)
-
-        if (this.frameBuffer.used == this.frameSize) {
-          // Finished buffering the frame. Parse the frame.
-          switch (this.frameType) {
-            case 1:
-              this._parseMethodFrame(this.frameChannel, this.frameBuffer);
-              break;
-
-            case 2:
-              this._parseHeaderFrame(this.frameChannel, this.frameBuffer);
-              break;
-
-            case 3:
-              if (this.onContent) {
-                this.onContent(this.frameChannel, this.frameBuffer);
-              }
-              break;
-
-            case 8:
-              debug("hearbeat");
-              if (this.onHeartBeat) this.onHeartBeat();
-              break;
-
-            default:
-              this.throwError("Unhandled frame type " + this.frameType);
-              break;
-          }
-          this.state = 'frameEnd';
-        }
+					this.handleFrameContent( data );
         break;
 
       case 'frameEnd':
-        // Frames are terminated by a single octet.
-        if (data[i] != 206 /* constants.frameEnd */) {
-          debug('data[' + i + '] = ' + data[i].toString(16));
-          debug('data = ' + data.toString());
-          debug('frameHeader: ' + this.frameHeader.toString());
-          debug('frameBuffer: ' + this.frameBuffer.toString());
-          this.throwError("Oversized frame");
-        }
-        this.state = 'frameHeader';
+          this.handleFrameEnd( data );
         break;
     }
-  }
 };
 
 
