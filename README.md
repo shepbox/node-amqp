@@ -263,6 +263,10 @@ object for the second. The options are
 - `autoDelete`: boolean, default true.
     If set, the exchange is deleted when all queues have finished using
     it.
+- `preBaked`: boolean, default false.
+    If set, the exchange is considered preBaked and will not try to declare.
+    (Binds only) This is useful if another application is setting up
+    exchanges and you don't need to re-declare them.
 
 An exchange will emit the `'open'` event when it is finally declared.
 

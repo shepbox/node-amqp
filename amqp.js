@@ -1769,7 +1769,7 @@ Exchange.prototype._onMethod = function (channel, method, args) {
   switch (method) {
     case methods.channelOpenOk:
       // Pre-baked exchanges don't need to be declared
-      if (/^$|(amq\.)/.test(this.name)) {
+      if (/^$|(amq\.)/.test(this.name) || this.options.preBaked) {
         this.state = 'open';
         this.emit('open');
       } else {
