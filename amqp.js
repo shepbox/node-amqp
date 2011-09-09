@@ -149,8 +149,22 @@ AMQPParser.prototype.throwError = function (error) {
 
 AMQPParser.prototype.handleFrameHeader = function(data) {
 
-	data.copy( this.frameHeader, this.frameHeader.used, this.dataPointer, this.dataPointer + this.frameHeader.length );
-	this.frameHeader.used = this.frameHeader.length;
+	// If the frame size is with-in this data chunk use it. Other wise just use all the data chunk.
+	var dataEndIndex = (this.dataPointer + this.frameHeader.length > data.length) ?
+		data.length :
+		this.dataPointer + this.frameHeader.length ;
+
+	// Get the length of data we will be using from the data chunk.
+	var dataBeingUsedChunkLength = dataEndIndex - this.dataPointer;
+
+	// If the new data chunk is too big for the frameHeader only use part of it.
+	if(dataBeingUsedChunkLength + this.frameHeader.used > this.frameHeader.length) {
+		dataBeingUsedChunkLength = this.frameHeader.length - this.frameHeader.used;
+		dataEndIndex = this.dataPointer + dataBeingUsedChunkLength;
+	}
+	
+	data.copy( this.frameHeader, this.frameHeader.used, this.dataPointer, dataEndIndex );
+	this.frameHeader.used += dataBeingUsedChunkLength;
 
 	if (this.frameHeader.used == this.frameHeader.length) {
 
@@ -194,8 +208,8 @@ AMQPParser.prototype.handleFrameContent = function( data ) {
 
 	// If the frame size is with-in this data chunk use it. Other wise just use all the data chunk.
 	var dataEndIndex = (this.dataPointer + this.frameSize > data.length) ?
-									data.length :
-									this.dataPointer + this.frameSize ;
+		data.length :
+		this.dataPointer + this.frameSize ;
 
 	// Get the length of data we will be using from the data chunk.
 	var dataBeingUsedChunkLength = dataEndIndex - this.dataPointer;
