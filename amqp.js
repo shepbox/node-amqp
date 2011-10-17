@@ -138,7 +138,6 @@ function AMQPParser (version, type) {
 
   this.frameHeader = new Buffer(7);
   this.frameHeader.used = 0;
-	this.dataPointer = 0;
 }
 
 // If there's an error in the parser, call the onError handler or throw
@@ -148,6 +147,8 @@ AMQPParser.prototype.throwError = function (error) {
 };
 
 AMQPParser.prototype.handleFrameHeader = function(data) {
+	this.__frameCount++;
+//	console.log('current round: ', this.__frameCount);
 
 	// If the frame size is with-in this data chunk use it. Other wise just use all the data chunk.
 	var dataEndIndex = (this.dataPointer + this.frameHeader.length > data.length) ?
@@ -280,6 +281,7 @@ AMQPParser.prototype.handleFrameEnd = function( data ){
 		// Looks like we still got some frames in this data chunk. Start from the begenning.
 		if(data.length > this.dataPointer) {
 			this.handleFrameHeader( data );
+//			console.log('going for another round.', data.length, this.__frameCount);
 			
 		// We're done with this data chunk. Reset it.
 		} else if (this.dataPointer == data.length) {
@@ -293,6 +295,9 @@ AMQPParser.prototype.execute = function (data) {
   // This function only deals with dismantling and buffering the frames.
   // It delegats to other functions for parsing the frame-body.
  // debug('execute: ' + data.toString());
+
+	this.dataPointer = 0;
+	this.__frameCount = 0;
 
 	switch (this.state) {
       case 'frameHeader':
@@ -913,7 +918,7 @@ function Connection (connectionArgs, options) {
   });
 
   self.addListener('data', function (data) {
-    parser.execute(data);
+    parser && parser.execute(data);
   });
 
   self.addListener('end', function () {
