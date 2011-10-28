@@ -192,7 +192,7 @@ AMQPParser.prototype.handleFrameHeader = function(data) {
 		this.frameBuffer.used = 0;
 
 		// Inrement dataPointer
-		this.dataPointer += this.frameHeader.length;
+		this.dataPointer += dataBeingUsedChunkLength;
 		if(this.dataPointer == data.length){
 			this.dataPointer = 0;
 		}
