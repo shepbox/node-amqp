@@ -147,9 +147,6 @@ AMQPParser.prototype.throwError = function (error) {
 };
 
 AMQPParser.prototype.handleFrameHeader = function(data) {
-	this.__frameCount++;
-//	console.log('current round: ', this.__frameCount);
-
 	// If the frame size is with-in this data chunk use it. Other wise just use all the data chunk.
 	var dataEndIndex = (this.dataPointer + this.frameHeader.length > data.length) ?
 		data.length :
@@ -193,9 +190,6 @@ AMQPParser.prototype.handleFrameHeader = function(data) {
 
 		// Inrement dataPointer
 		this.dataPointer += dataBeingUsedChunkLength;
-		if(this.dataPointer == data.length){
-			this.dataPointer = 0;
-		}
 
 		// Change State
 		this.state = 'bufferFrame';
@@ -204,9 +198,6 @@ AMQPParser.prototype.handleFrameHeader = function(data) {
 };
 
 AMQPParser.prototype.handleFrameContent = function( data ) {
-	 // Buffer the entire frame. I would love to avoid this, but doing
-	// otherwise seems to be extremely painful.
-
 	// If the frame size is with-in this data chunk use it. Other wise just use all the data chunk.
 	var dataEndIndex = (this.dataPointer + this.frameSize > data.length) ?
 		data.length :
@@ -222,15 +213,10 @@ AMQPParser.prototype.handleFrameContent = function( data ) {
 	}
 
 	// Copy to frameBuffer
-	if(this.frameSize > 0) {
-		data.copy( this.frameBuffer, this.frameBuffer.used, this.dataPointer, dataEndIndex );
-		this.frameBuffer.used += dataBeingUsedChunkLength;
+	data.copy( this.frameBuffer, this.frameBuffer.used, this.dataPointer, dataEndIndex );
+	this.frameBuffer.used += dataBeingUsedChunkLength;
 
-		this.dataPointer += dataBeingUsedChunkLength;
-		if(this.dataPointer == data.length) {
-			this.dataPointer = 0;
-		}
-	}
+	this.dataPointer += dataBeingUsedChunkLength;
 
 	if (this.frameBuffer.used == this.frameSize) {
 		// Finished buffering the frame. Parse the frame.
@@ -263,10 +249,10 @@ AMQPParser.prototype.handleFrameContent = function( data ) {
 	}
 };
 
-AMQPParser.prototype.handleFrameEnd = function( data ){
+AMQPParser.prototype.handleFrameEnd = function( data ) {
 	// Frames are terminated by a single octet.
 	if (data[this.dataPointer] != 206 /* constants.frameEnd */) {
-			debug('data[' + this.dataPointer + '] = ' + data[data.length-1].toString(16));
+			debug('data[' + this.dataPointer + '] = ' + data[this.dataPointer].toString(16));
 			debug('data = ' + data.toString());
 			debug('frameHeader: ' + this.frameHeader.toString());
 			debug('frameBuffer: ' + this.frameBuffer.toString());
@@ -281,11 +267,6 @@ AMQPParser.prototype.handleFrameEnd = function( data ){
 		// Looks like we still got some frames in this data chunk. Start from the begenning.
 		if(data.length > this.dataPointer) {
 			this.handleFrameHeader( data );
-//			console.log('going for another round.', data.length, this.__frameCount);
-			
-		// We're done with this data chunk. Reset it.
-		} else if (this.dataPointer == data.length) {
-			this.dataPointer = 0;
 		}
 };
 
