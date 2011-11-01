@@ -250,9 +250,14 @@ AMQPParser.prototype.handleFrameContent = function( data ) {
 };
 
 AMQPParser.prototype.handleFrameEnd = function( data ) {
-	// Frames are terminated by a single octet.
-	if (data[this.dataPointer] != 206 /* constants.frameEnd */) {
-			debug('data[' + this.dataPointer + '] = ' + data[this.dataPointer].toString(16));
+	var endOctet = data[this.dataPointer];
+
+	// Oops. The end octet is not on this data chunk. Don't do anything and wait for the next chunk to have our end octet.
+	if(endOctet === undefined) return;
+
+	// Frames are terminated by a single octet.?
+	if (endOctet != 206 /* constants.frameEnd */) {
+			debug('data[' + this.dataPointer + '] = ' + endOctet.toString(16));
 			debug('data = ' + data.toString());
 			debug('frameHeader: ' + this.frameHeader.toString());
 			debug('frameBuffer: ' + this.frameBuffer.toString());
