@@ -1,8 +1,8 @@
 { "name" : "amqp"
 , "description" : "AMQP driver for node"
 , "keywords" : [ "amqp" ]
-, "version" : "0.1.0"
-, "preferGlobal" : true
+, "version" : "0.1.0s"
+, "preferGlobal" : false
 , "author" : { "name" : "Ryan Dahl" }
 , "contributors" :
   [ { "name" : "Vasili Sviridov" }
@@ -17,13 +17,13 @@
   ]
 , "repository" :
   { "type" : "git"
-  , "url" : "git://github.com/postwait/node-amqp.git"
+  , "url" : "git://github.com/shepbox/node-amqp.git"
   }
 , "bugs" :
-  { "web" : "http://github.com/postwait/node-amqp/issues"
+  { "web" : "http://github.com/shepbox/node-amqp/issues"
   }
 , "main" : "./amqp"
-, "engines" : { "node" : "0.4 || 0.5" }
+, "engines" : { "node" : ">= 0.4.0" }
 , "licenses" :
   [ { "type" : "MIT"
     , "url" : "http://github.com/postwait/node-amqp/raw/master/LICENSE-MIT"
